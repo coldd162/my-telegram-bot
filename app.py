@@ -1,73 +1,52 @@
-# app.py
-# Telegram anonymous complaints bot (aiogram v3) + Flask (Render friendly)
 import os
-import asyncio
-import threading
+import telebot
 from flask import Flask
-from aiogram import Bot, Dispatcher
-from aiogram.filters import CommandStart
-from aiogram.types import Message
+from threading import Thread
 
-# ---------- Конфигурация (из переменных окружения) ----------
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-if not TOKEN:
-    raise RuntimeError("TELEGRAM_TOKEN не задан. Установите в Render Environment.")
+CHANNEL_USERNAME = "@cold_entry"
+PARTNER_LINK = "https://your-partner-link.com"  # 👈 СЮДА ВСТАВЬ СВОЮ ССЫЛКУ 1WIN
 
-ADMIN_CHAT = os.environ.get("ADMIN_CHAT_ID")
-if not ADMIN_CHAT:
-    raise RuntimeError("ADMIN_CHAT_ID не задан. Установите в Render Environment.")
-ADMIN_CHAT_ID = int(ADMIN_CHAT)  # пример: -1001234567890 для канала/чата
+bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
-# ---------- Инициализация aiogram ----------
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+@app.route('/')
+def index():
+    return "Bot is running", 200
 
-# ---------- Хендлеры (перенеси сюда свою логику) ----------
-@dp.message(CommandStart())
-async def start(message: Message):
-    await message.answer(
-        "Максимально подробно опишите проблему. Чем больше информации - тем быстрее "
-        "отработают соответствующие органы! Отправьте жалобу, и я полностью передам её "
-        "анонимно администраторам. Можно оставить контакты для связи."
-    )
+@app.route('/health')
+def health():
+    return "OK", 200
 
-@dp.message()
-async def complaint(message: Message):
-    text = message.text or "<нет текста>"
-    # пересылаем админам: только текст, без раскрытия пользователя
+def check_subscription(user_id):
     try:
-        await bot.send_message(ADMIN_CHAT_ID, f"⚠️ Юху! Кто-то настучал!:\n\n{text}")
-        await message.answer("✅ Информация отправлена! Имейте в виду - у всех ребят сейчас огромное колличество работы, не все вопросы можно решить сразу и по щелчку пальцев. Но все виновные будут наказаны. Вор будет сидеть в тюрьме. Быть добру!")
-    except Exception as e:
-        # логирование (в Render видно в логах)
-        print("Ошибка при отправке в админ-чат:", e)
-        await message.answer("❗️ Не удалось отправить жалобу — попробуйте позже.")
+        member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
+        return member.status in ['member', 'creator', 'administrator']
+    except:
+        return False
 
-# ---------- Функция запуска polling (async) ----------
-async def run_bot():
-    # Запускаем polling (он блокирует текущий asyncio loop)
-    await dp.start_polling(bot)
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "Привет! Напиши /guide, чтобы получить ссылку.")
 
-# ---------- Небольшой HTTP-сервер для Render (чтобы был открыт порт) ----------
-def run_http():
-    app = Flask(__name__)
+@bot.message_handler(commands=['guide'])
+def send_guide(message):
+    user_id = message.from_user.id
+    if check_subscription(user_id):
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        button = telebot.types.InlineKeyboardButton("Перейти к 1win", url=PARTNER_LINK)
+        keyboard.add(button)
+        bot.reply_to(message, "✅ Ты подписан! Переходи по ссылке:", reply_markup=keyboard)
+    else:
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        button = telebot.types.InlineKeyboardButton("Подписаться на канал", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")
+        keyboard.add(button)
+        bot.reply_to(message, f"❌ Подпишись на канал {CHANNEL_USERNAME} и повтори команду /guide", reply_markup=keyboard)
 
-    @app.route("/")
-    def root():
-        return "Bot is running", 200
+def run_bot():
+    bot.infinity_polling()
 
-    @app.route("/health")
-    def health():
-        return "OK", 200
-
-    port = int(os.environ.get("PORT", "5000"))
-    # Render требует 0.0.0.0 и порт из $PORT
-    app.run(host="0.0.0.0", port=port)
-
-# ---------- Точка входа ----------
 if __name__ == "__main__":
-    # Запускаем Flask в отдельном потоке — чтобы binding порта происходил в процессе
-    threading.Thread(target=run_http, daemon=True).start()
-
-    # Запускаем aiogram polling в основном потоке (asyncio)
-    asyncio.run(run_bot())
+    t = Thread(target=run_bot)
+    t.start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
