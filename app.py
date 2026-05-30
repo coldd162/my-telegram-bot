@@ -5,7 +5,7 @@ from threading import Thread
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHANNEL_USERNAME = "@cold_entry"
-PARTNER_LINK = "https://one-vv2213.com/casino/list?open=register&p=cykx"  # 
+PARTNER_LINK = "https://one-vv0786.com/casino/list?open=register&p=cykx"  # 
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
